@@ -141,15 +141,17 @@ defmodule Bumblebee.Conversion.PyTorch do
 
             {value, diff} =
               if all_sources_found? do
-                value = builder_fun.(Enum.reverse(source_values))
+                # value = builder_fun.(Enum.reverse(source_values))
 
-                case verify_param_shape(param_expr, value) do
-                  :ok ->
-                    {value, diff}
+                # case verify_param_shape(param_expr, value) do
+                #   :ok ->
+                #     {value, diff}
 
-                  {:error, expected, actual} ->
-                    {nil, prepend(diff, :mismatched, [{layer_name, param, expected, actual}])}
-                end
+                #   {:error, expected, actual} ->
+                #     {nil, prepend(diff, :mismatched, [{layer_name, param, expected, actual}])}
+                # end
+
+                {{builder_fun, Enum.reverse(source_keys)}, diff}
               else
                 {nil, prepend(diff, :missing, [{layer_name, param}])}
               end
@@ -162,6 +164,39 @@ defmodule Bumblebee.Conversion.PyTorch do
           end)
 
         {{layer_name, Map.new(params)}, diff}
+      end)
+
+    key_usage = Enum.group_by(diff.used_keys, & &1) |> Map.new(fn {x, ys} -> {x, Enum.count(ys)} end)
+
+    for {key, value} <- pytorch_state, not Map.has_key?(key_usage, key) do
+      Nx.backend_deallocate(value)
+    end
+
+    {params, _key_usage} =
+      Enum.map_reduce(params, key_usage, fn {layer_name, params}, key_usage ->
+        {params, key_usage} =
+          Enum.map_reduce(params, key_usage, fn {name, {builder_fun, source_keys}}, key_usage ->
+            args = Enum.map(source_keys, &Map.fetch!(pytorch_state, &1))
+            value = builder_fun.(args)
+
+            key_usage =
+              Enum.reduce(source_keys, key_usage, fn key, key_usage ->
+                case key_usage do
+                  %{^key => 1} ->
+                    if pytorch_state[key] != value do
+                      Nx.backend_deallocate(pytorch_state[key])
+                    end
+                    Map.delete(key_usage, key)
+
+                  %{^key => n} ->
+                    %{key_usage | key => n - 1}
+                end
+              end)
+
+            {{name, value}, key_usage}
+          end)
+
+        {{layer_name, Map.new(params)}, key_usage}
       end)
 
     params = Map.new(params)
