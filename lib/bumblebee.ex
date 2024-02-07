@@ -572,6 +572,7 @@ defmodule Bumblebee do
   @doc type: :model
   @spec load_model(repository(), keyword()) :: {:ok, model_info()} | {:error, String.t()}
   def load_model(repository, opts \\ []) do
+    IO.inspect(repository, label: "== Bumblebee即将加载repo")
     repository = normalize_repository!(repository)
 
     opts =
@@ -907,6 +908,7 @@ defmodule Bumblebee do
   @spec load_tokenizer(repository(), keyword()) ::
           {:ok, Bumblebee.Tokenizer.t()} | {:error, String.t()}
   def load_tokenizer(repository, opts \\ []) do
+    IO.inspect(repository, label: "==>>>>> Bumblebee即将加载tokenizer")
     repository = normalize_repository!(repository)
     opts = Keyword.validate!(opts, [:type])
     type = opts[:type]
